@@ -97,14 +97,23 @@ document.getElementById('exportFilteredBtn').onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `history-${date}.csv`; a.click();
 };
 
-// Realtime subscription (no polling)
-const ch = supabase.channel('history_changes')
-  .on('postgres_changes', { event: '*', schema: 'public', table: 'login_history' }, payload => {
-    const date = document.getElementById('filterDate').value;
-    if (date) loadHistory(date); else loadHistory();
-    listVideos();
-  })
-  .subscribe();
+// --- Broadcast subscription (Supabase Channels) ---
+// Subscribe to "login_updates" channel and listen for broadcast events
+const channel = supabase.channel('login_updates');
+
+channel.on('broadcast', { event: '*' }, (payload) => {
+  // payload.event is 'login' or 'logout'
+  // payload.payload contains the data we sent (login_id, username, ts)
+  console.log('broadcast received', payload);
+  // reload history and videos
+  const date = document.getElementById('filterDate').value;
+  if (date) loadHistory(date); else loadHistory();
+  listVideos();
+});
+
+channel.subscribe()
+  .then(() => console.log('subscribed to login_updates'))
+  .catch(e => console.warn('channel subscribe failed', e));
 
 // initial load
 listVideos();

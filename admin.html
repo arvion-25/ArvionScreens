@@ -1,0 +1,164 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Admin Panel</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Arial;padding:18px}
+    h1{margin-bottom:8px}
+    button{padding:8px 12px;margin-right:8px;cursor:pointer}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:8px;border:1px solid #ccc;text-align:left}
+    .user-agent{max-width:400px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .delete-btn{background:#dc3545;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <h1>Admin Panel</h1>
+
+  <section>
+    <h2>Upload Video</h2>
+    <form id="uploadForm">
+      <input type="file" name="video" accept="video/*" required />
+      <button>Upload</button>
+    </form>
+  </section>
+
+  <section>
+    <h2>Uploaded Videos</h2>
+    <ul id="videoList"></ul>
+  </section>
+
+  <section>
+    <h2>User Display Login History</h2>
+    <label>Select date: <input type="date" id="filterDate" /></label>
+    <button id="filterBtn">Filter</button>
+    <button id="refreshBtn">Refresh</button>
+    <button id="exportAllBtn">Export All</button>
+    <button id="exportFilteredBtn">Export Selected Date</button>
+
+    <table>
+      <thead><tr><th>Username</th><th>Login (IST)</th><th>Logout (IST)</th><th>Device</th><th>User-Agent</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
+
+  <script>
+    function toIST(utcIso) {
+      if (!utcIso) return '';
+      const d = new Date(utcIso);
+      return d.toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }).replace(',', '');
+    }
+
+    async function listVideos(){
+      const ul = document.getElementById('videoList'); ul.innerHTML = 'Loading...';
+      const { data, error } = await supabase.storage.from('ads-videos').list('', { limit: 500 });
+      if (error) { ul.innerHTML = '<li>Error listing</li>'; console.error(error); return; }
+      ul.innerHTML = '';
+      data.forEach(f => {
+        const li = document.createElement('li');
+        li.innerHTML = `${f.name} <button class="delBtn">Delete</button>`;
+        li.querySelector('.delBtn').onclick = async () => {
+          if (!confirm('Delete this file?')) return;
+          const r = await supabase.storage.from('ads-videos').remove([f.name]);
+          if (r.error) { alert('Delete failed: ' + r.error.message); console.error(r.error); }
+          else listVideos();
+        };
+        ul.appendChild(li);
+      });
+    }
+
+    // Upload
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = e.target.video.files[0];
+      if (!file) return;
+      const fileName = Date.now() + '-' + file.name;
+      const { error } = await supabase.storage.from('ads-videos').upload(fileName, file);
+      if (error) { alert('Upload failed: ' + error.message); console.error(error); return; }
+      // optional metadata insert into a 'videos' table if you created one
+      await supabase.from('videos').insert([{ filename: file.name, storage_path: fileName, uploaded_by: sessionStorage.getItem('logged_user') || 'admin' }]).catch(()=>{});
+      alert('Uploaded');
+      listVideos();
+    });
+
+    // History load (filtered by date)
+    async function loadHistory(date=null) {
+      const tbody = document.getElementById('historyBody'); tbody.innerHTML = 'Loading...';
+      let q = supabase.from('login_history').select('*').neq('user_name','admin').order('login_time', { ascending:false });
+      if (date) {
+        const start = new Date(date + 'T00:00:00Z').toISOString();
+        const end = new Date(date + 'T23:59:59Z').toISOString();
+        q = q.gte('login_time', start).lte('login_time', end);
+      }
+      const { data, error } = await q;
+      if (error) { tbody.innerHTML = '<tr><td colspan="5">Error loading history</td></tr>'; console.error(error); return; }
+      tbody.innerHTML = '';
+      (data||[]).forEach(r => {
+        let logoutDisplay = r.logout_time ? toIST(r.logout_time) : 'Active';
+        if (!r.logout_time && r.last_ping) {
+          const lastPing = new Date(r.last_ping);
+          const ageSec = (Date.now() - lastPing.getTime())/1000;
+          if (ageSec > 70) {
+            logoutDisplay = toIST(r.last_ping) + ' (detected offline)';
+          }
+        }
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.user_name}</td><td>${toIST(r.login_time)}</td><td>${logoutDisplay}</td><td>${r.device_model||''}</td><td class="user-agent" title="${r.user_agent||''}">${r.user_agent||''}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById('filterBtn').onclick = () => {
+      const date = document.getElementById('filterDate').value;
+      if (!date) { alert('Pick a date'); return; }
+      loadHistory(date);
+    };
+    document.getElementById('refreshBtn').onclick = () => {
+      document.getElementById('filterDate').value = '';
+      loadHistory();
+    };
+
+    function toCSV(rows) {
+      let out = 'Username,Login (IST),Logout (IST),Device,User-Agent\n';
+      rows.forEach(r => {
+        const logout = r.logout_time ? toIST(r.logout_time) : (r.last_ping ? toIST(r.last_ping) + ' (detected offline)' : '');
+        out += `"${r.user_name}","${toIST(r.login_time)}","${logout}","${r.device_model||''}","${(r.user_agent||'').replace(/"/g,'""')}"\n`;
+      });
+      return out;
+    }
+
+    document.getElementById('exportAllBtn').onclick = async () => {
+      const { data, error } = await supabase.from('login_history').select('*').neq('user_name','admin').order('login_time', { ascending:false });
+      if (error) { alert('Export failed'); console.error(error); return; }
+      const blob = new Blob([toCSV(data||[])], { type:'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'history-all.csv'; a.click();
+    };
+
+    document.getElementById('exportFilteredBtn').onclick = async () => {
+      const date = document.getElementById('filterDate').value; if (!date) { alert('Pick a date'); return; }
+      const start = new Date(date + 'T00:00:00Z').toISOString();
+      const end = new Date(date + 'T23:59:59Z').toISOString();
+      const { data, error } = await supabase.from('login_history').select('*').neq('user_name','admin').gte('login_time', start).lte('login_time', end).order('login_time', { ascending:false });
+      if (error) { alert('Export failed'); console.error(error); return; }
+      const blob = new Blob([toCSV(data||[])], { type:'text/csv' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `history-${date}.csv`; a.click();
+    };
+
+    // auto refresh every 5s (admin UI)
+    setInterval(() => {
+      const date = document.getElementById('filterDate').value;
+      if (date) loadHistory(date); else loadHistory();
+      listVideos();
+    }, 5000);
+
+    // initial load
+    listVideos();
+    loadHistory();
+  </script>
+</body>
+</html>

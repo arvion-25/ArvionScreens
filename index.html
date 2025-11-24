@@ -1,0 +1,112 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Login - Ad Screen</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body{font-family:Arial;background:#f4f6f8;padding:30px}
+    form{max-width:360px;margin:auto;background:#fff;padding:18px;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+    input,button{width:100%;padding:10px;margin-top:8px;border-radius:4px;border:1px solid #ddd}
+    button{background:#0b76f6;color:#fff;border:none;cursor:pointer}
+    #msg{color:#c00;margin-top:8px}
+  </style>
+</head>
+<body>
+  <form id="loginForm">
+    <h2>Login</h2>
+    <input id="username" placeholder="Username" required />
+    <input id="password" placeholder="Password" type="password" required />
+    <button type="submit">Login</button>
+    <div id="msg"></div>
+  </form>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
+
+  <script>
+  // Device detection (Option A) - Client Hints + UA fallback
+  async function getDeviceInfo(){
+    const info = { model: null, platform: null, os: null, osVersion: null, browser: null, browserVersion: null, ua: navigator.userAgent || '' };
+
+    if (navigator.userAgentData?.getHighEntropyValues) {
+      try {
+        const hi = await navigator.userAgentData.getHighEntropyValues(['platform','model','uaFullVersion']);
+        info.platform = hi.platform || navigator.platform || '';
+        if (hi.model) info.model = hi.model;
+        if (hi.uaFullVersion) info.browserVersion = hi.uaFullVersion;
+        if (navigator.userAgentData.brands) info.browser = navigator.userAgentData.brands.map(b=>b.brand).join(' ');
+      } catch(e){}
+    }
+
+    const ua = navigator.userAgent || '';
+    // Android simple parse
+    const a = ua.match(/Android\s*([\d.]*);\s*([^;)\r\n]+)\s*(?:Build\/|;)/i);
+    if (a) {
+      info.os = 'Android';
+      info.osVersion = a[1] || null;
+      if (!info.model) info.model = a[2].trim();
+    } else {
+      const ios = ua.match(/\((iPhone|iPad).*OS\s([\d_]+)/i);
+      if (ios) {
+        info.os = 'iOS';
+        info.osVersion = ios[2].replace(/_/g,'.');
+        info.model = ios[1];
+      } else {
+        if (/Windows NT/i.test(ua)) info.os = 'Windows';
+        else if (/Macintosh/i.test(ua)) info.os = 'macOS';
+        else if (/Linux/i.test(ua)) info.os = 'Linux';
+        const b = ua.match(/(Firefox|Chrome|CriOS|Edg|Safari)\/([\d.]+)/i);
+        if (b) { info.browser = b[1]; info.browserVersion = b[2]; }
+      }
+    }
+    if (!info.model) info.model = info.platform || (ua.slice(0,60));
+    return info;
+  }
+
+  const form = document.getElementById('loginForm');
+  const msg = document.getElementById('msg');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.textContent = 'Checking...';
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      // call server RPC verify_user (this must exist and return login_id uuid)
+      const { data, error } = await supabase.rpc('verify_user', { un: username, pwd: password });
+      if (error) { console.error(error); msg.textContent = 'Server error'; return; }
+      if (!data || data.length === 0) { msg.textContent = 'Invalid username or password'; return; }
+
+      const row = data[0];
+      const loginId = row.login_id;
+      if (!loginId) { msg.textContent = 'Login failed'; return; }
+
+      // detect device info
+      const dev = await getDeviceInfo();
+      const device_model = dev.model || dev.platform || dev.ua.slice(0,60);
+
+      // update the login_history row inserted by verify_user to add device info & user_agent
+      await supabase.from('login_history').update({
+        user_name: username,
+        device_model: device_model,
+        user_agent: dev.ua
+      }).eq('id', loginId);
+
+      // store login id in sessionStorage (cleared on browser close)
+      sessionStorage.setItem('login_id', loginId);
+      sessionStorage.setItem('logged_user', username);
+
+      // redirect by role
+      if (row.role === 'admin') window.location.href = 'admin.html';
+      else window.location.href = 'display.html';
+    } catch (err) {
+      console.error(err);
+      msg.textContent = 'Network error';
+    }
+  });
+  </script>
+</body>
+</html>

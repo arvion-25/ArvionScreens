@@ -1,5 +1,19 @@
 // script.js — used by admin.html
 // Assumes supabase-client.js loaded first and supabase global exists
+// Realtime updates for login_history table
+supabase
+  .channel('history-changes')
+  .on(
+    'postgres_changes',
+    { event: '*', schema: 'public', table: 'login_history' },
+    (payload) => {
+      console.log('Realtime update:', payload);
+      const date = document.getElementById('filterDate').value;
+      if (date) loadHistory(date);
+      else loadHistory();
+    }
+  )
+  .subscribe();
 
 function toIST(utcIso) {
   if (!utcIso) return '';
@@ -105,11 +119,7 @@ document.getElementById('exportFilteredBtn').onclick = async () => {
 };
 
 // auto-refresh every 5s (ok for GitHub Pages - unlimited bandwidth)
-setInterval(() => {
-  const date = document.getElementById('filterDate').value;
-  if (date) loadHistory(date); else loadHistory();
-  listVideos();
-}, 5000);
+
 
 // initial load
 listVideos();

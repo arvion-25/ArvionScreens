@@ -1,7 +1,18 @@
 <!doctype html>
 <html>
-<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Admin Panel</title>
-<style>body{font-family:Arial;padding:18px}h1,h2{margin:8px 0}button{padding:8px 12px;margin-right:8px;cursor:pointer}table{width:100%;border-collapse:collapse;margin-top:12px}th,td{padding:8px;border:1px solid #ccc;text-align:left}.user-agent{max-width:480px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.delete-btn{background:#dc3545;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer}</style>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Admin Panel - Ad Screen</title>
+  <style>
+    body{font-family:Arial;padding:18px}
+    h1,h2{margin:8px 0}
+    button{padding:8px 12px;margin-right:8px;cursor:pointer}
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:8px;border:1px solid #ccc;text-align:left}
+    .user-agent{max-width:480px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .delete-btn{background:#dc3545;color:#fff;border:none;padding:6px 10px;border-radius:4px;cursor:pointer}
+  </style>
 </head>
 <body>
   <h1>Admin Panel</h1>
@@ -20,11 +31,15 @@
     <button id="refreshBtn">Refresh</button>
     <button id="exportAllBtn">Export All</button>
     <button id="exportFilteredBtn">Export Selected Date</button>
-    <table><thead><tr><th>Username</th><th>Login (IST)</th><th>Logout (IST)</th><th>Device</th><th>User-Agent</th></tr></thead><tbody id="historyBody"></tbody></table>
+
+    <table>
+      <thead><tr><th>Username</th><th>Login (IST)</th><th>Logout (IST)</th><th>Device</th><th>User-Agent</th></tr></thead>
+      <tbody id="historyBody"></tbody>
+    </table>
   </section>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-client.js"></script>
-<script src="script.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

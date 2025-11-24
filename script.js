@@ -1,4 +1,4 @@
-// script.js (admin page)
+// script.js (admin)
 function toIST(utcIso) {
   if (!utcIso) return '';
   const d = new Date(utcIso);
@@ -69,10 +69,7 @@ document.getElementById('filterBtn').onclick = () => {
   if (!date) { alert('Pick a date'); return; }
   loadHistory(date);
 };
-document.getElementById('refreshBtn').onclick = () => {
-  document.getElementById('filterDate').value = '';
-  loadHistory();
-};
+document.getElementById('refreshBtn').onclick = () => { document.getElementById('filterDate').value = ''; loadHistory(); };
 
 function csvFromRows(rows) {
   let out = 'Username,Login (IST),Logout (IST),Device,User-Agent\n';
@@ -100,10 +97,9 @@ document.getElementById('exportFilteredBtn').onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `history-${date}.csv`; a.click();
 };
 
-// Realtime subscription to update history live (no polling)
+// Realtime subscription (no polling)
 const ch = supabase.channel('history_changes')
   .on('postgres_changes', { event: '*', schema: 'public', table: 'login_history' }, payload => {
-    // when login_history changes -> refresh list
     const date = document.getElementById('filterDate').value;
     if (date) loadHistory(date); else loadHistory();
     listVideos();

@@ -7,7 +7,6 @@
   <style>
     body{font-family:Arial, sans-serif;background:#f4f6f8;padding:28px}
     form{max-width:380px;margin:40px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
-    h2{margin:0 0 12px}
     input,button{width:100%;padding:10px;margin-top:8px;border-radius:6px;border:1px solid #ddd;box-sizing:border-box}
     button{background:#0b76f6;color:#fff;border:none;cursor:pointer}
     #msg{margin-top:10px;color:#c33}
@@ -25,87 +24,74 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-client.js"></script>
   <script>
-    // Option A device detection (client hints + UA fallback)
-    async function getDeviceInfo() {
-      const ua = navigator.userAgent || '';
-      const info = { model: null, platform: null, os: null, osVersion: null, browser: null, browserVersion: null, ua: ua };
-
-      if (navigator.userAgentData?.getHighEntropyValues) {
-        try {
-          const hi = await navigator.userAgentData.getHighEntropyValues(['platform','model','uaFullVersion']);
-          info.platform = hi.platform || navigator.platform || '';
-          if (hi.model) info.model = hi.model;
-          if (hi.uaFullVersion) info.browserVersion = hi.uaFullVersion;
-          if (navigator.userAgentData.brands) info.browser = navigator.userAgentData.brands.map(b=>b.brand).join(' ');
-        } catch(e) {}
-      }
-
-      // UA-string fallback parsing (best-effort)
-      const a = ua.match(/Android\s*([\d.]*);\s*([^;)\r\n]+)\s*(?:Build\/|;)/i);
-      if (a) {
-        info.os = 'Android'; info.osVersion = a[1] || null;
-        if (!info.model) info.model = a[2].trim();
-      } else {
-        const ios = ua.match(/\((iPhone|iPad).*OS\s([\d_]+)/i);
-        if (ios) {
-          info.os = 'iOS';
-          info.osVersion = ios[2].replace(/_/g,'.');
-          info.model = ios[1];
-        } else {
-          if (/Windows NT/i.test(ua)) info.os = 'Windows';
-          else if (/Macintosh/i.test(ua)) info.os = 'macOS';
-          else if (/Linux/i.test(ua)) info.os = 'Linux';
-          const b = ua.match(/(Firefox|Chrome|CriOS|Edg|Safari)\/([\d.]+)/i);
-          if (b) { info.browser = b[1]; info.browserVersion = b[2]; }
-        }
-      }
-      if (!info.model) info.model = info.platform || ua.slice(0,60);
-      return info;
-    }
-
-    const form = document.getElementById('loginForm');
-    const msg = document.getElementById('msg');
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      msg.textContent = 'Checking...';
-
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-
+  // Device detection (Option A): client hints + UA fallback
+  async function getDeviceInfo(){
+    const ua = navigator.userAgent || '';
+    const info = { model:null, platform:null, os:null, osVersion:null, browser:null, browserVersion:null, ua:ua };
+    if (navigator.userAgentData?.getHighEntropyValues){
       try {
-        // call RPC verify_user => must return { username, role, login_id (uuid) }
-        const { data, error } = await supabase.rpc('verify_user', { un: username, pwd: password });
-        if (error) { console.error('verify_user error', error); msg.textContent = 'Server error'; return; }
-        if (!data || data.length === 0) { msg.textContent = 'Invalid username or password'; return; }
-
-        const row = data[0];
-        const loginId = row.login_id;
-        if (!loginId) { msg.textContent = 'Login failed'; return; }
-
-        // detect device + update row with device info
-        const dev = await getDeviceInfo();
-        const device_model = dev.model || dev.platform || dev.ua.slice(0,60);
-
-        await supabase.from('login_history').update({
-          user_name: username,
-          device_model: device_model,
-          user_agent: dev.ua,
-          last_ping: new Date().toISOString()
-        }).eq('id', loginId);
-
-        // store for session (cleared if browser closed)
-        sessionStorage.setItem('login_id', loginId);
-        sessionStorage.setItem('logged_user', username);
-
-        // navigate by role
-        if (row.role === 'admin') window.location.href = 'admin.html';
-        else window.location.href = 'display.html';
-      } catch (err) {
-        console.error(err);
-        msg.textContent = 'Network or server error';
+        const hi = await navigator.userAgentData.getHighEntropyValues(['platform','model','uaFullVersion']);
+        info.platform = hi.platform || navigator.platform || '';
+        if (hi.model) info.model = hi.model;
+        if (hi.uaFullVersion) info.browserVersion = hi.uaFullVersion;
+        if (navigator.userAgentData.brands) info.browser = navigator.userAgentData.brands.map(b=>b.brand).join(' ');
+      } catch(e){}
+    }
+    const a = ua.match(/Android\s*([\d.]*);\s*([^;)\r\n]+)\s*(?:Build\/|;)/i);
+    if (a){ info.os='Android'; info.osVersion=a[1]||null; if(!info.model) info.model=a[2].trim(); }
+    else {
+      const ios = ua.match(/\((iPhone|iPad).*OS\s([\d_]+)/i);
+      if (ios){ info.os='iOS'; info.osVersion=ios[2].replace(/_/g,'.'); info.model=ios[1]; }
+      else {
+        if (/Windows NT/i.test(ua)) info.os='Windows';
+        else if (/Macintosh/i.test(ua)) info.os='macOS';
+        else if (/Linux/i.test(ua)) info.os='Linux';
+        const b = ua.match(/(Firefox|Chrome|CriOS|Edg|Safari)\/([\d.]+)/i);
+        if (b){ info.browser=b[1]; info.browserVersion=b[2]; }
       }
-    });
+    }
+    if (!info.model) info.model = info.platform || ua.slice(0,60);
+    return info;
+  }
+
+  const form = document.getElementById('loginForm'), msg = document.getElementById('msg');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.textContent = 'Checking...';
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      const { data, error } = await supabase.rpc('verify_user', { un: username, pwd: password });
+      if (error) { console.error(error); msg.textContent = 'Server error'; return; }
+      if (!data || data.length===0){ msg.textContent='Invalid username or password'; return; }
+
+      const row = data[0]; // { username, role, login_id }
+      const loginId = row.login_id;
+      if (!loginId){ msg.textContent='Login failed'; return; }
+
+      const dev = await getDeviceInfo();
+      const device_model = dev.model || dev.platform || dev.ua.slice(0,60);
+
+      await supabase.from('login_history').update({
+        user_name: username,
+        device_model: device_model,
+        user_agent: dev.ua,
+        last_ping: new Date().toISOString()
+      }).eq('id', loginId);
+
+      sessionStorage.setItem('login_id', loginId);
+      sessionStorage.setItem('logged_user', username);
+
+      if (row.role === 'admin') window.location.href = 'admin.html';
+      else window.location.href = 'display.html';
+    } catch (err) {
+      console.error(err);
+      msg.textContent = 'Network or server error';
+    }
+  });
   </script>
 </body>
 </html>

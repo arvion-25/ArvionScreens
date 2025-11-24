@@ -1,26 +1,35 @@
-// script.js (admin)
+// script.js (patched) - drop-in replacement, preserves upload/delete/export logic
+// Keeps UI stable (no blanking), robust channel subscription, and debounced refresh.
+
 function toIST(utcIso) {
   if (!utcIso) return '';
   const d = new Date(utcIso);
   return d.toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' }).replace(',', '');
 }
 
+// ---------- Videos listing / upload / delete (unchanged behavior) ----------
 async function listVideos(){
-  const ul = document.getElementById('videoList'); ul.innerHTML = 'Loading...';
-  const { data, error } = await supabase.storage.from('ads-videos').list('', { limit: 500 });
-  if (error) { ul.innerHTML = '<li>Error listing videos</li>'; console.error(error); return; }
-  ul.innerHTML = '';
-  data.forEach(f => {
-    const li = document.createElement('li');
-    li.innerHTML = `${f.name} <button class="delBtn">Delete</button>`;
-    li.querySelector('.delBtn').onclick = async () => {
-      if (!confirm('Delete this file?')) return;
-      const r = await supabase.storage.from('ads-videos').remove([f.name]);
-      if (r.error) { alert('Delete failed: ' + r.error.message); console.error(r.error); }
-      else listVideos();
-    };
-    ul.appendChild(li);
-  });
+  const ul = document.getElementById('videoList'); 
+  ul.innerHTML = 'Loading...';
+  try {
+    const { data, error } = await supabase.storage.from('ads-videos').list('', { limit: 500 });
+    if (error) { ul.innerHTML = '<li>Error listing videos</li>'; console.error(error); return; }
+    ul.innerHTML = '';
+    data.forEach(f => {
+      const li = document.createElement('li');
+      li.innerHTML = `${f.name} <button class="delBtn">Delete</button>`;
+      li.querySelector('.delBtn').onclick = async () => {
+        if (!confirm('Delete this file?')) return;
+        const r = await supabase.storage.from('ads-videos').remove([f.name]);
+        if (r.error) { alert('Delete failed: ' + r.error.message); console.error(r.error); }
+        else listVideos();
+      };
+      ul.appendChild(li);
+    });
+  } catch (e) {
+    console.error(e);
+    ul.innerHTML = '<li>Error listing videos</li>';
+  }
 }
 
 document.getElementById('uploadForm').addEventListener('submit', async (e) => {
@@ -35,8 +44,14 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
   listVideos();
 });
 
+// ---------- History loading (safe UI / no immediate wipe) ----------
 async function loadHistory(filterDate = null) {
-  const tbody = document.getElementById('historyBody'); tbody.innerHTML = 'Loading...';
+  const tbody = document.getElementById('historyBody');
+  if (!tbody) return;
+  // keep the old content to restore in case of an error or during loading
+  const previousHTML = tbody.innerHTML;
+  // show minimal non-blocking loading row (keeps table shape)
+  tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
   try {
     let q = supabase.from('login_history').select('*').neq('user_name','admin').order('login_time', { ascending: false });
     if (filterDate) {
@@ -45,9 +60,16 @@ async function loadHistory(filterDate = null) {
       q = q.gte('login_time', start).lte('login_time', end);
     }
     const { data, error } = await q;
-    if (error) { tbody.innerHTML = '<tr><td colspan="5">Error loading history</td></tr>'; console.error(error); return; }
+    if (error) {
+      console.error('loadHistory error', error);
+      // restore previous view if available
+      tbody.innerHTML = previousHTML || '<tr><td colspan="5">Error loading history</td></tr>';
+      return;
+    }
+
+    // render rows only after successful fetch (prevents flicker/blank state)
     tbody.innerHTML = '';
-    (data||[]).forEach(r => {
+    (data || []).forEach(r => {
       let logoutDisplay = r.logout_time ? toIST(r.logout_time) : 'Active';
       if (!r.logout_time && r.last_ping) {
         const lastPing = new Date(r.last_ping);
@@ -59,18 +81,12 @@ async function loadHistory(filterDate = null) {
       tbody.appendChild(tr);
     });
   } catch (e) {
-    console.error(e);
-    tbody.innerHTML = '<tr><td colspan="5">Error loading history</td></tr>';
+    console.error('Unexpected loadHistory error', e);
+    tbody.innerHTML = previousHTML || '<tr><td colspan="5">Error loading history</td></tr>';
   }
 }
 
-document.getElementById('filterBtn').onclick = () => {
-  const date = document.getElementById('filterDate').value;
-  if (!date) { alert('Pick a date'); return; }
-  loadHistory(date);
-};
-document.getElementById('refreshBtn').onclick = () => { document.getElementById('filterDate').value = ''; loadHistory(); };
-
+// ---------- Export functions (unchanged) ----------
 function csvFromRows(rows) {
   let out = 'Username,Login (IST),Logout (IST),Device,User-Agent\n';
   rows.forEach(r => {
@@ -97,24 +113,77 @@ document.getElementById('exportFilteredBtn').onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `history-${date}.csv`; a.click();
 };
 
-// --- Broadcast subscription (Supabase Channels) ---
-// Subscribe to "login_updates" channel and listen for broadcast events
-const channel = supabase.channel('login_updates');
+// ---------- Debounce helper to avoid repeated rapid reloads ----------
+let refreshScheduled = false;
+function scheduleRefresh() {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  setTimeout(() => {
+    const date = document.getElementById('filterDate')?.value;
+    if (date) loadHistory(date); else loadHistory();
+    listVideos();
+    refreshScheduled = false;
+  }, 600); // 600ms debounce
+}
 
-channel.on('broadcast', { event: '*' }, (payload) => {
-  // payload.event is 'login' or 'logout'
-  // payload.payload contains the data we sent (login_id, username, ts)
-  console.log('broadcast received', payload);
-  // reload history and videos
-  const date = document.getElementById('filterDate').value;
-  if (date) loadHistory(date); else loadHistory();
-  listVideos();
+// ---------- Broadcast subscription (robust) ----------
+// Use Supabase broadcast channel "login_updates" (works without logical replication)
+let channel = null;
+async function ensureChannelSubscribed() {
+  if (channel) return;
+  channel = supabase.channel('login_updates');
+
+  channel.on('broadcast', { event: '*' }, (payload) => {
+    console.log('[broadcast] event=', payload.event, 'payload=', payload.payload);
+    // schedule refresh; don't blink UI immediately
+    scheduleRefresh();
+  });
+
+  // subscribe with retries
+  const maxRetries = 5;
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      await channel.subscribe();
+      console.log('channel subscribed to login_updates');
+      // initial load after successful subscription
+      const date = document.getElementById('filterDate')?.value;
+      if (date) loadHistory(date); else loadHistory();
+      listVideos();
+      return;
+    } catch (err) {
+      console.warn('channel subscribe failed, retrying...', attempt, err);
+      attempt++;
+      await new Promise(r => setTimeout(r, 1000 + attempt*200));
+    }
+  }
+  console.error('Failed to subscribe to channel after retries');
+}
+
+// attempt to subscribe immediately
+ensureChannelSubscribed().catch(e => console.warn('subscribe error', e));
+
+// If the tab becomes visible again, ensure we're subscribed and refresh once
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) {
+    ensureChannelSubscribed().catch(()=>{});
+    // small delay to avoid immediate flicker
+    setTimeout(() => {
+      const date = document.getElementById('filterDate')?.value;
+      if (date) loadHistory(date); else loadHistory();
+      listVideos();
+    }, 300);
+  }
 });
 
-channel.subscribe()
-  .then(() => console.log('subscribed to login_updates'))
-  .catch(e => console.warn('channel subscribe failed', e));
+// ---------- Filter / Refresh button handlers ----------
+document.getElementById('filterBtn').onclick = () => {
+  const date = document.getElementById('filterDate').value;
+  if (!date) { alert('Pick a date'); return; }
+  loadHistory(date);
+};
+document.getElementById('refreshBtn').onclick = () => { document.getElementById('filterDate').value = ''; loadHistory(); };
 
-// initial load
+// ---------- Initial load ----------
 listVideos();
 loadHistory();

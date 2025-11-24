@@ -1,20 +1,4 @@
-// script.js — used by admin.html
-// Assumes supabase-client.js loaded first and supabase global exists
-// Realtime updates for login_history table
-supabase
-  .channel('history-changes')
-  .on(
-    'postgres_changes',
-    { event: '*', schema: 'public', table: 'login_history' },
-    (payload) => {
-      console.log('Realtime update:', payload);
-      const date = document.getElementById('filterDate').value;
-      if (date) loadHistory(date);
-      else loadHistory();
-    }
-  )
-  .subscribe();
-
+// script.js (admin page)
 function toIST(utcIso) {
   if (!utcIso) return '';
   const d = new Date(utcIso);
@@ -46,13 +30,11 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
   const fileName = Date.now() + '-' + file.name;
   const { error } = await supabase.storage.from('ads-videos').upload(fileName, file);
   if (error) { alert('Upload failed: ' + error.message); console.error(error); return; }
-  // optional video metadata table insert (if you created a videos table)
   await supabase.from('videos').insert([{ filename: file.name, storage_path: fileName, uploaded_by: sessionStorage.getItem('logged_user') || 'admin' }]).catch(()=>{});
   alert('Uploaded');
   listVideos();
 });
 
-// Load history (filter optional date param YYYY-MM-DD)
 async function loadHistory(filterDate = null) {
   const tbody = document.getElementById('historyBody'); tbody.innerHTML = 'Loading...';
   try {
@@ -118,8 +100,15 @@ document.getElementById('exportFilteredBtn').onclick = async () => {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `history-${date}.csv`; a.click();
 };
 
-// auto-refresh every 5s (ok for GitHub Pages - unlimited bandwidth)
-
+// Realtime subscription to update history live (no polling)
+const ch = supabase.channel('history_changes')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'login_history' }, payload => {
+    // when login_history changes -> refresh list
+    const date = document.getElementById('filterDate').value;
+    if (date) loadHistory(date); else loadHistory();
+    listVideos();
+  })
+  .subscribe();
 
 // initial load
 listVideos();

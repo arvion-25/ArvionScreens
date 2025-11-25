@@ -1,77 +1,114 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="UTF-8">
   <title>Admin Panel</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+
   <style>
     body { font-family: Arial; padding: 20px; }
-    h2 { margin-top: 24px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-    th, td { border: 1px solid #555; padding: 8px; text-align:left; }
-    #refreshBtn, button { padding: 8px 12px; margin-right:6px; cursor:pointer; }
-    .delete-btn { background: #dc3545; color: white; border: none; padding: 6px 10px; border-radius: 4px; }
-    ul { list-style: none; padding-left: 0; }
-    li { margin-bottom: 6px; }
-    label { display:block; margin-top:8px; }
+    h2 { margin-top: 40px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    table, th, td { border: 1px solid #555; }
+    th, td { padding: 10px; text-align: left; }
+    button { cursor: pointer; }
+
+    #refreshBtn, #filterBtn, #exportAllBtn, #exportFilteredBtn {
+      padding: 6px 10px;
+      background: #007bff;
+      color: white;
+      border: none;
+      border-radius: 3px;
+      margin-right: 10px;
+      cursor: pointer;
+    }
+    .delete-btn { background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 4px; }
+
+    .user-delete-btn {
+      background: #dc3545;
+      color: white;
+      padding: 5px 8px;
+      border: none;
+      border-radius: 3px;
+      margin-left: 10px;
+    }
   </style>
 </head>
 
 <body>
-  <h1>Admin Panel</h1>
 
-  <!-- Create user (unchanged) -->
-  <h2>Create User</h2>
-  <form id="createUserForm">
-    <label>Username: <input type="text" id="newUsername" required></label>
-    <label>Password: <input type="password" id="newPassword" required></label>
-    <label>Role:
-      <select id="newRole">
-        <option value="brand">brand (view history)</option>
-        <option value="display">display (ad screen)</option>
-        <option value="admin">admin (full)</option>
-      </select>
-    </label>
-    <button type="submit">Create User</button>
-  </form>
+<h1>Admin Panel</h1>
 
-  <!-- Users list -->
-  <h2>Users</h2>
-  <ul id="usersList">Loading users...</ul>
+<!-- Upload Section -->
+<h2>Upload Video</h2>
+<form id="uploadForm">
+  <input type="file" name="video" required>
+  <button type="submit">Upload</button>
+</form>
 
-  <!-- Upload Section with assign-to -->
-  <h2>Upload Video (Assign to Display User)</h2>
-  <form id="uploadForm">
-    <label>Choose display user to assign:
-      <select id="assignToSelect"></select>
-    </label>
-    <input type="file" name="video" required>
-    <button type="submit">Upload and Assign</button>
-  </form>
+<!-- Video List -->
+<h2>Uploaded Videos</h2>
+<ul id="videoList"></ul>
 
-  <!-- Video List -->
-  <h2>Uploaded Videos (grouped by assigned display)</h2>
-  <div id="videosGrouped">Loading videos...</div>
+<!-- Create User -->
+<h2>Create New User</h2>
 
-  <!-- Login History -->
-  <h2>User Display Login History</h2>
-  <label>Select date: <input type="date" id="filterDate"></label>
-  <button id="filterBtn">Filter</button>
-  <button id="refreshBtn">Refresh</button>
-  <button id="exportAllBtn">Export All</button>
-  <button id="exportFilteredBtn">Export Selected Date</button>
+<label>Username:</label>
+<input id="newUserName">
 
-  <table>
-    <thead>
-      <tr>
-        <th>Username</th><th>Login Time</th><th>Logout Time</th><th>Device</th><th>User-Agent</th>
-      </tr>
-    </thead>
-    <tbody id="historyBody"></tbody>
-  </table>
+<br><br>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js"></script>
-  <script src="script.js"></script>
+<label>Password:</label>
+<input id="newUserPassword" type="password">
+
+<br><br>
+
+<label>Role:</label>
+<select id="newUserRole">
+  <option value="display">Display User</option>
+  <option value="brand">Brand User</option>
+</select>
+
+<br><br>
+
+<button id="createUserBtn">Create User</button>
+
+<!-- User List -->
+<h2>Manage Users</h2>
+<ul id="userList"></ul>
+
+<!-- Login History -->
+<h2>User Display Login History</h2>
+
+<label>Select Date:</label>
+<input type="date" id="filterDate">
+
+<button id="filterBtn">Filter</button>
+<button id="refreshBtn">Clear Filter</button>
+
+<br><br>
+
+<button id="exportAllBtn">Export All</button>
+<button id="exportFilteredBtn">Export Filtered</button>
+
+<table>
+  <thead>
+    <tr>
+      <th>Username</th>
+      <th>Login Time</th>
+      <th>Logout Time</th>
+      <th>Device</th>
+      <th>User Agent</th>
+    </tr>
+  </thead>
+  <tbody id="historyBody"></tbody>
+</table>
+
+<script src="supabase-client.js"></script>
+<script src="script.js"></script>
+
 </body>
 </html>

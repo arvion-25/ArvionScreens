@@ -1,128 +1,72 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
   <title>Admin Panel</title>
-
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: Arial; padding: 20px; }
-    h2 { margin-top: 40px; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-    }
-
-    table, th, td {
-      border: 1px solid #555;
-    }
-
-    th, td {
-      padding: 10px;
-      text-align: left;
-    }
-
-    #refreshBtn, #filterBtn, #exportAllBtn, #exportFilteredBtn, #createUserBtn {
-      padding: 6px 12px;
-      background: #007bff;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      margin: 5px 0;
-    }
-
-    .delete-btn {
-      background: #dc3545;
-      color: white;
-      border: none;
-      padding: 6px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    .error {
-      color: red;
-      font-weight: bold;
-    }
-
-    input, select {
-      padding: 6px;
-      margin-right: 5px;
-    }
-
-    #userForm {
-      margin-top: 20px;
-      padding: 10px;
-      border: 1px solid #aaa;
-      width: 380px;
-      border-radius: 6px;
-      background: #f8f8f8;
-    }
+    body { font-family: Arial; padding: 18px; }
+    h2 { margin-top: 22px; }
+    input, select { padding: 6px; margin: 6px 0; }
+    button { padding: 8px 12px; margin-right: 6px; }
+    .delete-btn { background: #dc3545; color: #fff; border: none; padding: 6px 8px; border-radius: 4px; cursor:pointer; }
+    ul { list-style:none; padding-left:0; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th,td { border:1px solid #ccc; padding:8px; text-align:left; }
   </style>
-
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <script src="supabase-client.js"></script>
 </head>
-
 <body>
 
 <h1>Admin Panel</h1>
 
-<!-- USER CREATION -->
-<h2>Create New User</h2>
+<!-- Create User -->
+<h2>Create User</h2>
 <div id="userForm">
-  <label>Username:</label>
-  <input type="text" id="newUsername" placeholder="Enter username" />
-
-  <label>Password:</label>
-  <input type="password" id="newPassword" placeholder="Enter password" />
-
-  <label>Role:</label>
-  <select id="newRole">
-    <option value="display">Display</option>
-    <option value="brand">Brand</option>
-  </select>
-
-  <button id="createUserBtn">Create User</button>
-  <p id="userMsg"></p>
+  <label>Username: <input id="newUsername" /></label><br/>
+  <label>Password: <input id="newPassword" type="password" /></label><br/>
+  <label>Role:
+    <select id="newRole">
+      <option value="display">Display</option>
+      <option value="brand">Brand</option>
+    </select>
+  </label><br/>
+  <label id="brandDisplayWrap" style="display:none">Assign Brand to Display:
+    <select id="brandAssignSelect"></select>
+  </label><br/>
+  <button id="createUserBtn">Create</button>
+  <span id="createUserMsg"></span>
 </div>
 
-<!-- Upload Section -->
-<h2>Upload Video</h2>
+<!-- Upload -->
+<h2>Upload Video (assign to a display user)</h2>
 <form id="uploadForm">
-  <input type="file" name="video" required>
-  <button type="submit">Upload</button>
+  <label>Assign to: <select id="assignDisplaySelect"></select></label><br/>
+  <input type="file" name="video" accept="video/*" required />
+  <button>Upload</button>
 </form>
 
-<!-- Video List -->
-<h2>Uploaded Videos</h2>
-<ul id="videoList"></ul>
+<!-- Video list -->
+<h2>Videos (by display)</h2>
+<div id="videosGrouped">Loading videos...</div>
 
-<!-- Login History -->
-<h2>User Login History</h2>
+<!-- Users -->
+<h2>Users</h2>
+<ul id="usersList">Loading...</ul>
 
-<input type="date" id="filterDate">
+<!-- History -->
+<h2>Login history (brand/admin)</h2>
+<label>Pick date: <input type="date" id="filterDate" /></label>
 <button id="filterBtn">Filter</button>
-<button id="refreshBtn">Show Today</button>
+<button id="clearFilterBtn">Clear</button>
 <button id="exportAllBtn">Export All</button>
 <button id="exportFilteredBtn">Export Selected Date</button>
 
 <table>
-  <thead>
-    <tr>
-      <th>User</th>
-      <th>Login Time</th>
-      <th>Logout Time</th>
-      <th>Device</th>
-      <th>User Agent</th>
-    </tr>
-  </thead>
+  <thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Device</th><th>UA</th></tr></thead>
   <tbody id="historyBody"></tbody>
 </table>
 
+<script src="supabase-client.js"></script>
 <script src="script.js"></script>
-
 </body>
 </html>

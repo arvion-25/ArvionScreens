@@ -1,111 +1,194 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <title>Admin Panel</title>
-
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body { font-family: Arial; padding: 20px; }
-    h2 { margin-top: 40px; }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 15px;
-    }
-
-    table, th, td {
-      border: 1px solid #555;
-    }
-
-    th, td {
-      padding: 10px;
-      text-align: left;
-    }
-
-    button {
-      padding: 7px 14px;
-      border: none;
-      background: #007bff;
-      color: white;
-      border-radius: 4px;
-      cursor: pointer;
-      margin: 4px;
-    }
-
-    .delete-btn {
-      background: #dc3545;
-    }
-
-    #userForm {
-      background: #f0f0f0;
-      padding: 10px;
-      border-radius: 5px;
-      width: 350px;
-    }
-
-    input, select {
-      padding: 6px;
-      margin: 6px;
-    }
+    body{font-family:Arial;padding:18px}
+    input,select,button{padding:8px;margin:6px}
+    .delete-btn{background:#dc3545;color:#fff;border:none;padding:6px 8px;border-radius:4px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #ccc;padding:8px}
   </style>
 </head>
-
 <body>
+  <h1>Admin Panel</h1>
 
-<h1>Admin Panel</h1>
+  <h2>Create User</h2>
+  <input id="newUser" placeholder="username" />
+  <input id="newPass" type="password" placeholder="password" />
+  <select id="newRole"><option value="display">Display</option><option value="brand">Brand</option></select>
+  <select id="brandToDisplay" style="display:none"></select>
+  <button id="btnCreate">Create</button>
+  <div id="createMsg"></div>
 
-<!-- CREATE USER -->
-<h2>Create New User</h2>
-<div id="userForm">
-  <input type="text" id="newUsername" placeholder="Username" />
-  <input type="password" id="newPassword" placeholder="Password" />
-  <select id="newRole">
-    <option value="display">Display</option>
-    <option value="brand">Brand</option>
-  </select>
-  <button id="createUserBtn">Create User</button>
-  <p id="userMsg"></p>
-</div>
+  <h2>Upload Video (assign to display)</h2>
+  <select id="assignDisplay"></select>
+  <form id="uploadForm"><input type="file" name="video" accept="video/*" required><button>Upload</button></form>
 
+  <h2>Videos</h2>
+  <div id="videosByDisplay">Loading...</div>
 
-<!-- UPLOAD SECTION -->
-<h2>Upload Video</h2>
-<form id="uploadForm">
-  <input type="file" name="video" required>
-  <button type="submit">Upload</button>
-</form>
+  <h2>Users</h2>
+  <ul id="usersList">Loading...</ul>
 
+  <h2>History</h2>
+  <input type="date" id="filterDate" />
+  <button id="filterBtn">Filter</button>
+  <button id="clearBtn">Clear</button>
+  <table><thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Device</th></tr></thead><tbody id="histBody"></tbody></table>
 
-<!-- VIDEO LIST -->
-<h2>Uploaded Videos</h2>
-<ul id="videoList"></ul>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
+  <script>
+    // small helpers
+    const toIST = ts => ts ? new Date(ts).toLocaleString('en-GB', { timeZone:'Asia/Kolkata' }).replace(',','') : '';
+    const $ = id => document.getElementById(id);
 
+    // populate display selects
+    async function loadDisplays() {
+      const { data } = await supabase.from('app_users').select('id,username').eq('role','display').order('username');
+      const assign = $('assignDisplay');
+      const brandSel = $('brandToDisplay');
+      assign.innerHTML = '<option value="">Select display</option>';
+      brandSel.innerHTML = '<option value="">Select display</option>';
+      (data||[]).forEach(d => {
+        assign.appendChild(new Option(d.username, d.id));
+        brandSel.appendChild(new Option(d.username, d.id));
+      });
+    }
 
-<!-- LOGIN HISTORY -->
-<h2>Login History</h2>
-<input type="date" id="filterDate">
-<button id="filterBtn">Filter</button>
-<button id="refreshBtn">Show Today</button>
+    // create user (brand -> link)
+    $('newRole').addEventListener('change', () => $('brandToDisplay').style.display = $('newRole').value === 'brand' ? 'inline-block' : 'none');
 
-<table>
-  <thead>
-    <tr>
-      <th>User</th>
-      <th>Login</th>
-      <th>Logout</th>
-      <th>Device</th>
-      <th>User-Agent</th>
-    </tr>
-  </thead>
-  <tbody id="historyBody"></tbody>
-</table>
+    $('btnCreate').onclick = async () => {
+      const un = $('newUser').value.trim();
+      const pw = $('newPass').value.trim();
+      const role = $('newRole').value;
+      const msg = $('createMsg'); msg.textContent = '';
+      if (!un || !pw) { msg.textContent = 'username & password required'; return; }
+      if (un === 'admin') { msg.textContent = 'Cannot create admin'; return; }
 
+      const { data, error } = await supabase.rpc('create_user', { p_username: un, p_password: pw, p_role: role });
+      if (error) { msg.textContent = 'Create failed: ' + error.message; return; }
+      const uid = data;
+      if (role === 'brand') {
+        const displayId = $('brandToDisplay').value;
+        if (!displayId) { msg.textContent = 'Pick display for brand'; return; }
+        await supabase.from('brand_links').insert([{ brand_user_id: uid, display_user_id: displayId }]);
+      }
+      msg.textContent = 'Created';
+      $('newUser').value = ''; $('newPass').value = '';
+      loadUsers(); loadDisplays(); loadVideosGrouped();
+    };
 
-<!-- IMPORTANT: LOAD ORDER -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="supabase-client.js"></script>
-<script src="script.js"></script>
+    // list users
+    async function loadUsers() {
+      const { data } = await supabase.from('app_users').select('id,username,role').order('username');
+      const ul = $('usersList'); ul.innerHTML = '';
+      (data||[]).forEach(u => {
+        const li = document.createElement('li');
+        li.textContent = `${u.username} (${u.role})`;
+        if (u.role !== 'admin') {
+          const b = document.createElement('button');
+          b.className = 'delete-btn';
+          b.textContent = 'Delete';
+          b.onclick = async () => {
+            if (!confirm('Delete '+u.username+'?')) return;
+            if (u.role === 'brand') await supabase.from('brand_links').delete().eq('brand_user_id', u.id);
+            await supabase.from('app_users').delete().eq('id', u.id);
+            loadUsers(); loadDisplays(); loadVideosGrouped();
+          };
+          li.appendChild(b);
+        }
+        ul.appendChild(li);
+      });
+    }
 
+    // upload: store file in storage and insert into videos with display_user_id
+    $('uploadForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const file = e.target.video.files[0];
+      if (!file) return alert('Choose file');
+      const displayId = $('assignDisplay').value;
+      if (!displayId) return alert('Choose display');
+      const path = Date.now() + '-' + file.name;
+      const { error: e1 } = await supabase.storage.from('ads-videos').upload(path, file);
+      if (e1) return alert('Upload failed: '+e1.message);
+      const { error: e2 } = await supabase.from('videos').insert([{ filename: file.name, storage_path: path, display_user_id: displayId, uploaded_by: 'admin' }]);
+      if (e2) { alert('DB insert failed'); return; }
+      alert('Uploaded & assigned');
+      loadVideosGrouped();
+    };
+
+    // grouped videos
+    async function loadVideosGrouped() {
+      const { data } = await supabase.from('videos').select('id,filename,storage_path,display_user_id,uploaded_at').order('uploaded_at',{ascending:false});
+      const div = $('videosByDisplay'); div.innerHTML = '';
+      const groups = {};
+      (data||[]).forEach(v => {
+        const key = v.display_user_id || 'unassigned';
+        groups[key] = groups[key] || []; groups[key].push(v);
+      });
+      for (const k of Object.keys(groups)) {
+        const title = k === 'unassigned' ? 'Unassigned' : `Display: ${k}`;
+        const h = document.createElement('h3'); h.textContent = title;
+        div.appendChild(h);
+        const ul = document.createElement('ul');
+        groups[k].forEach(v => {
+          const li = document.createElement('li');
+          li.innerHTML = `${v.filename} <button class="delete-btn">Delete</button>`;
+          li.querySelector('button').onclick = async () => {
+            if (!confirm('Delete?')) return;
+            await supabase.storage.from('ads-videos').remove([v.storage_path]);
+            await supabase.from('videos').delete().eq('id', v.id);
+            loadVideosGrouped();
+          };
+          ul.appendChild(li);
+        });
+        div.appendChild(ul);
+      }
+    }
+
+    // history (admin shows all displays; brand will view linked display on brand.html)
+    async function loadHistory(filterDate = null) {
+      const tbody = $('histBody'); tbody.innerHTML = '<tr><td colspan="4">Loading…</td></tr>';
+      let q = supabase.from('login_history').select('*').neq('user_name','admin').order('login_time',{ascending:false});
+      if (filterDate) {
+        const start = new Date(filterDate + 'T00:00:00+05:30').toISOString();
+        const end = new Date(filterDate + 'T23:59:59+05:30').toISOString();
+        q = q.gte('login_time', start).lte('login_time', end);
+      }
+      const { data } = await q;
+      tbody.innerHTML = '';
+      (data||[]).forEach(r => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${r.user_name}</td><td>${new Date(r.login_time).toLocaleString('en-GB',{timeZone:'Asia/Kolkata'})}</td><td>${r.logout_time ? new Date(r.logout_time).toLocaleString('en-GB',{timeZone:'Asia/Kolkata'}) : 'Active'}</td><td>${r.device_model||''}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    $('filterBtn').onclick = () => {
+      if (!$('filterDate').value) return alert('Pick date');
+      loadHistory($('filterDate').value);
+    };
+    $('clearBtn').onclick = () => { $('filterDate').value = ''; loadHistory(); };
+
+    // realtime broadcast -> refresh lists
+    const channel = supabase.channel('login_updates');
+    channel.on('broadcast', { event: '*' }, () => { loadHistory(); loadVideosGrouped(); loadUsers(); loadDisplays(); });
+    channel.subscribe();
+
+    // init
+    (async function(){
+      await loadDisplays();
+      await loadUsers();
+      await loadVideosGrouped();
+      const today = new Date().toISOString().slice(0,10);
+      $('filterDate').value = today;
+      loadHistory(today);
+    })();
+  </script>
 </body>
 </html>

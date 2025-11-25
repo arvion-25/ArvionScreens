@@ -2,103 +2,100 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Display Player</title>
+  <title>Ad Display</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    html,body{height:100%;margin:0;background:#000}
-    video{width:100%;height:100%;object-fit:contain;background:#000}
-    #fsBtn{position:fixed;top:12px;right:12px;z-index:50;padding:8px;background:#333;color:#fff;border:none;border-radius:6px}
+    html,body,video{height:100%;margin:0;background:#000}
+    video{width:100%;height:100%;object-fit:contain;display:block}
   </style>
 </head>
 <body>
-  <button id="fsBtn">Toggle Fullscreen</button>
-  <video id="player" autoplay muted playsinline preload="auto"></video>
+  <video id="adPlayer" autoplay muted></video>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-client.js"></script>
 
   <script>
-    const player = document.getElementById('player'), fsBtn = document.getElementById('fsBtn');
+    const BUCKET = 'ads-videos';
+    const player = document.getElementById('adPlayer');
 
-    async function loadAndPlay(){
-      const { data, error } = await supabase.storage.from('ads-videos').list('', { limit: 500 });
-      if (error || !data){ document.body.innerHTML = '<div style="color:#fff;padding:20px">No videos found.</div>'; return; }
-      const files = data.filter(f=>/\.(mp4|webm|ogg)$/i.test(f.name));
-      if (!files.length){ document.body.innerHTML = '<div style="color:#fff;padding:20px">No playable videos.</div>'; return; }
+    // get current logged user and loginId from sessionStorage (set by index.html)
+    const currentUser = sessionStorage.getItem('logged_user');
+    const loginId = sessionStorage.getItem('login_id');
 
-      let idx = 0;
-      async function setSrc(i){
-        const file = files[i].name;
-        const { data: urlData } = supabase.storage.from('ads-videos').getPublicUrl(file);
-        player.src = urlData.publicUrl;
-        try { await player.play(); } catch(e) { console.warn(e); }
-      }
-      player.addEventListener('ended', ()=>{ idx = (idx+1) % files.length; setSrc(idx); });
-      await setSrc(0);
+    if (!currentUser) {
+      // not logged in, redirect to login
+      window.location = '/';
     }
 
-    async function sendHeartbeat(){
-      const loginId = sessionStorage.getItem('login_id');
-      if (!loginId) return;
-      try { await supabase.from('login_history').update({ last_ping: new Date().toISOString() }).eq('id', loginId); }
-      catch(e){ console.warn('heartbeat failed', e); }
-    }
-
-    // Reliable logout: call RPC (keepalive fetch) AND broadcast
-    function sendLogoutKeepalive(){
-      const loginId = sessionStorage.getItem('login_id');
-      if (!loginId) return;
-
-      // 1) Broadcast (may or may not complete but we try)
+    async function loadAssignedVideos() {
       try {
-        supabase.channel('login_updates').send({
-          type: 'broadcast',
-          event: 'logout',
-          payload: { login_id: loginId, ts: new Date().toISOString() }
-        });
-      } catch(e) { console.warn('broadcast logout failed', e); }
-
-      // 2) Call RPC record_logout with keepalive fetch (headers + body)
-      const payload = JSON.stringify({ lid: loginId, ts: new Date().toISOString() });
-      const url = `${SUPABASE_URL}/rest/v1/rpc/record_logout`;
-      try {
-        // fetch with keepalive; this is the reliable method
-        navigator.sendBeacon ? (
-          // attempt sendBeacon to a simple endpoint with query params as well (best-effort)
-          (() => {
-            try {
-              const beaconUrl = `${SUPABASE_URL}/rest/v1/rpc/record_logout?lid=${encodeURIComponent(loginId)}&ts=${encodeURIComponent(new Date().toISOString())}&apikey=${encodeURIComponent(SUPABASE_ANON_KEY)}`;
-              const blob = new Blob([], { type: 'text/plain' });
-              navigator.sendBeacon(beaconUrl, blob);
-            } catch(e) { /* ignore */ }
-          })()
-        ) : null;
-        // fallback POST keepalive
-        fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': SUPABASE_ANON_KEY,
-            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-          },
-          body: payload,
-          keepalive: true
-        }).catch(()=>{});
-      } catch(e) {
-        console.warn('logout POST failed', e);
+        // fetch videos rows for assigned_to == currentUser
+        const { data, error } = await supabase.from('videos').select('*').eq('assigned_to', currentUser).order('uploaded_at', { ascending: true });
+        if (error) { console.error('videos fetch error', error); return []; }
+        const urls = [];
+        for (const v of (data || [])) {
+          const { data: pu } = supabase.storage.from(BUCKET).getPublicUrl(v.storage_path);
+          if (pu && pu.publicUrl) urls.push({ url: pu.publicUrl, meta: v });
+        }
+        return urls;
+      } catch (e) {
+        console.error(e);
+        return [];
       }
     }
 
-    window.addEventListener('beforeunload', sendLogoutKeepalive);
-    setInterval(sendHeartbeat, 20000);
-    fsBtn.onclick = async () => {
-      if (!document.fullscreenElement) await player.requestFullscreen().catch(()=>{});
-      else document.exitFullscreen().catch(()=>{});
-    };
+    let playlist = [];
+    let idx = 0;
 
-    // start
-    loadAndPlay();
-    sendHeartbeat();
+    async function startPlayer() {
+      playlist = await loadAssignedVideos();
+      if (!playlist.length) {
+        alert('No videos assigned to this display user yet.');
+        return;
+      }
+      idx = 0;
+      player.src = playlist[idx].url;
+      player.play().catch(()=>{});
+    }
+
+    player.addEventListener('ended', () => {
+      if (!playlist.length) return;
+      idx = (idx + 1) % playlist.length;
+      player.src = playlist[idx].url;
+      player.play().catch(()=>{});
+    });
+
+    // heartbeat: optional - keep session alive or last_ping update
+    setInterval(()=> {
+      // if you have an RPC or table to update last_ping, call it here
+      // e.g. supabase.from('login_history').update({ last_ping: new Date().toISOString() }).eq('id', loginId)
+      // but only if you have allowed that. Omit if not.
+      if (loginId) {
+        // try update last_ping (fire-and-forget)
+        supabase.from('login_history').update({ last_ping: new Date().toISOString() }).eq('id', loginId).catch(()=>{});
+      }
+    }, 30000);
+
+    // on tab close, send auto-logout via RPC or update
+    window.addEventListener('beforeunload', function() {
+      // try send logout update via navigator.sendBeacon if you have endpoint; with Supabase we can attempt direct fetch
+      if (loginId) {
+        // use synchronous navigator.sendBeacon to a tiny endpoint if you had server; for supabase, fallback to fetch (may not complete)
+        // Best-effort: update logout_time with RPC (non-blocking)
+        navigator.sendBeacon('/.well-known/empty'); // noop to allow unload
+        // fire async update (best-effort)
+        fetch('https://'+location.hostname + '/blank', { method: 'POST' }).catch(()=>{});
+        // Also attempt supabase update (best-effort)
+        try {
+          // best-effort update (async)
+          supabase.from('login_history').update({ logout_time: new Date().toISOString() }).eq('id', loginId).catch(()=>{});
+        } catch(e){}
+      }
+    });
+
+    // initial start
+    startPlayer();
   </script>
 </body>
 </html>

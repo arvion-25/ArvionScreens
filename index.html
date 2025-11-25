@@ -1,68 +1,110 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Ad Screen - Login</title>
+  <meta charset="utf-8" />
+  <title>Login - Ad Screen</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body{font-family:Arial;background:#f1f1f1;padding:20px}
-    form{max-width:360px;margin:40px auto;padding:20px;background:#fff;border-radius:8px}
-    input,button,select{width:100%;padding:10px;margin:8px 0;border-radius:4px;border:1px solid #ccc}
-    button{background:#007bff;color:#fff;border:none;cursor:pointer}
-    .small{font-size:0.9rem;color:#666}
+    body{font-family:Arial, sans-serif;background:#f4f6f8;padding:28px}
+    form{max-width:380px;margin:40px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+    input,button{width:100%;padding:10px;margin-top:8px;border-radius:6px;border:1px solid #ddd;box-sizing:border-box}
+    button{background:#0b76f6;color:#fff;border:none;cursor:pointer}
+    #msg{margin-top:10px;color:#c33}
   </style>
 </head>
 <body>
   <form id="loginForm">
     <h2>Login</h2>
-    <input id="username" placeholder="Username" required />
-    <input id="password" placeholder="Password" type="password" required />
+    <input id="username" placeholder="Username" required autocomplete="username" />
+    <input id="password" type="password" placeholder="Password" required autocomplete="current-password" />
     <button type="submit">Login</button>
-    <p id="msg" class="small"></p>
+    <div id="msg"></div>
   </form>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-client.js"></script>
 
   <script>
-    // The verify_user RPC must return: uid (user id uuid), username, role, login_id (login_history id)
-    document.getElementById('loginForm').onsubmit = async (e) => {
-      e.preventDefault();
-      const u = document.getElementById('username').value.trim();
-      const p = document.getElementById('password').value.trim();
-      const msg = document.getElementById('msg');
-      msg.textContent = 'Checking...';
-
+  // small device info helper (same as before)
+  async function getDeviceInfo(){
+    const ua = navigator.userAgent || '';
+    const info = { model:null, platform:null, os:null, osVersion:null, browser:null, browserVersion:null, ua:ua };
+    if (navigator.userAgentData?.getHighEntropyValues){
       try {
-        const { data, error } = await supabase.rpc('verify_user', { un: u, pwd: p });
-        if (error || !data) {
-          msg.textContent = 'Invalid credentials';
-          return;
-        }
-        // If your verify_user returns columns, adapt accordingly.
-        // Here we support responses either as object or as single-row array
-        const row = Array.isArray(data) ? data[0] : data;
-        // expected: row.uid (uuid), row.role, row.login_id (login_history id)
-        if (!row || !row.uid) {
-          msg.textContent = 'Login failed';
-          return;
-        }
-
-        sessionStorage.setItem('logged_user_id', row.uid);
-        sessionStorage.setItem('logged_user_name', row.username || u);
-        // store login_history id (if RPC created it)
-        if (row.login_id) sessionStorage.setItem('login_row_id', row.login_id);
-
-        // Redirect based on role
-        const role = row.role || row.user_role || 'display';
-        if (role === 'admin') window.location = './admin.html';
-        else if (role === 'brand') window.location = './brand.html';
-        else window.location = './display.html';
-      } catch (err) {
-        console.error(err);
-        msg.textContent = 'Server error';
+        const hi = await navigator.userAgentData.getHighEntropyValues(['platform','model','uaFullVersion']);
+        info.platform = hi.platform || navigator.platform || '';
+        if (hi.model) info.model = hi.model;
+        if (hi.uaFullVersion) info.browserVersion = hi.uaFullVersion;
+        if (navigator.userAgentData.brands) info.browser = navigator.userAgentData.brands.map(b=>b.brand).join(' ');
+      } catch(e){}
+    }
+    const a = ua.match(/Android\s*([\d.]*);\s*([^;)\r\n]+)\s*(?:Build\/|;)/i);
+    if (a){ info.os='Android'; info.osVersion=a[1]||null; if(!info.model) info.model=a[2].trim(); }
+    else {
+      const ios = ua.match(/\((iPhone|iPad).*OS\s([\d_]+)/i);
+      if (ios){ info.os='iOS'; info.osVersion=ios[2].replace(/_/g,'.'); info.model=ios[1]; }
+      else {
+        if (/Windows NT/i.test(ua)) info.os='Windows';
+        else if (/Macintosh/i.test(ua)) info.os='macOS';
+        else if (/Linux/i.test(ua)) info.os='Linux';
+        const b = ua.match(/(Firefox|Chrome|CriOS|Edg|Safari)\/([\d.]+)/i);
+        if (b){ info.browser=b[1]; info.browserVersion=b[2]; }
       }
-    };
+    }
+    if (!info.model) info.model = info.platform || ua.slice(0,60);
+    return info;
+  }
+
+  const form = document.getElementById('loginForm'), msg = document.getElementById('msg');
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    msg.textContent = 'Checking...';
+
+    const username = document.getElementById('username').value.trim();
+    const password = document.getElementById('password').value;
+
+    try {
+      // RPC verify_user returns { username, role, login_id }
+      const { data, error } = await supabase.rpc('verify_user', { un: username, pwd: password });
+      if (error) { console.error(error); msg.textContent = 'Server error'; return; }
+      if (!data || data.length === 0) { msg.textContent = 'Invalid username or password'; return; }
+
+      const row = data[0];
+      const loginId = row.login_id;
+      if (!loginId) { msg.textContent = 'Login failed'; return; }
+
+      // update device fields on the login_history row
+      const dev = await getDeviceInfo();
+      const device_model = dev.model || dev.platform || dev.ua.slice(0,60);
+      await supabase.from('login_history').update({
+        user_name: username,
+        device_model: device_model,
+        user_agent: dev.ua,
+        last_ping: new Date().toISOString()
+      }).eq('id', loginId);
+
+      // store for this browser session
+      sessionStorage.setItem('login_id', loginId);
+      sessionStorage.setItem('logged_user', username);
+
+      // broadcast login event (so admin receives it instantly)
+      try {
+        supabase.channel('login_updates').send({
+          type: 'broadcast',
+          event: 'login',
+          payload: { login_id: loginId, username, ts: new Date().toISOString() }
+        });
+      } catch(e) { console.warn('broadcast login failed', e); }
+
+      // redirect by role
+      if (row.role === 'admin') window.location.href = 'admin.html';
+      else window.location.href = 'display.html';
+    } catch (err) {
+      console.error(err);
+      msg.textContent = 'Network or server error';
+    }
+  });
   </script>
 </body>
 </html>

@@ -48,43 +48,62 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
 async function loadHistory(filterDate = null) {
   const tbody = document.getElementById('historyBody');
   if (!tbody) return;
-  // keep the old content to restore in case of an error or during loading
+
   const previousHTML = tbody.innerHTML;
-  // show minimal non-blocking loading row (keeps table shape)
   tbody.innerHTML = '<tr><td colspan="5">Loading…</td></tr>';
+
   try {
-    let q = supabase.from('login_history').select('*').neq('user_name','admin').order('login_time', { ascending: false });
-    if (filterDate) {
-      const start = new Date(filterDate + 'T00:00:00Z').toISOString();
-      const end = new Date(filterDate + 'T23:59:59Z').toISOString();
-      q = q.gte('login_time', start).lte('login_time', end);
-    }
-    const { data, error } = await q;
+    // Fetch all history (no date filter here)
+    const { data, error } = await supabase
+      .from('login_history')
+      .select('*')
+      .neq('user_name', 'admin')
+      .order('login_time', { ascending: false });
+
     if (error) {
       console.error('loadHistory error', error);
-      // restore previous view if available
       tbody.innerHTML = previousHTML || '<tr><td colspan="5">Error loading history</td></tr>';
       return;
     }
 
-    // render rows only after successful fetch (prevents flicker/blank state)
+    let rows = data || [];
+
+    // ----------- NEW FIX: FILTER ON IST DATE -------------
+    if (filterDate) {
+      rows = rows.filter(r => toISTDate(r.login_time) === filterDate);
+    }
+    // ------------------------------------------------------
+
     tbody.innerHTML = '';
-    (data || []).forEach(r => {
+
+    rows.forEach(r => {
       let logoutDisplay = r.logout_time ? toIST(r.logout_time) : 'Active';
+
       if (!r.logout_time && r.last_ping) {
         const lastPing = new Date(r.last_ping);
         const ageSec = (Date.now() - lastPing.getTime()) / 1000;
         if (ageSec > 70) logoutDisplay = toIST(r.last_ping) + ' (detected offline)';
       }
+
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${r.user_name}</td><td>${toIST(r.login_time)}</td><td>${logoutDisplay}</td><td>${r.device_model||''}</td><td class="user-agent" title="${r.user_agent||''}">${r.user_agent||''}</td>`;
+      tr.innerHTML = `
+        <td>${r.user_name}</td>
+        <td>${toIST(r.login_time)}</td>
+        <td>${logoutDisplay}</td>
+        <td>${r.device_model || ''}</td>
+        <td class="user-agent" title="${r.user_agent || ''}">
+          ${r.user_agent || ''}
+        </td>
+      `;
       tbody.appendChild(tr);
     });
+
   } catch (e) {
     console.error('Unexpected loadHistory error', e);
     tbody.innerHTML = previousHTML || '<tr><td colspan="5">Error loading history</td></tr>';
   }
 }
+
 
 // ---------- Export functions (unchanged) ----------
 function csvFromRows(rows) {

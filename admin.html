@@ -7,40 +7,87 @@
   <style>
     body { font-family: Arial; padding: 20px; }
     h2 { margin-top: 40px; }
+
     table {
       width: 100%;
       border-collapse: collapse;
       margin-top: 15px;
     }
-    table, th, td { border: 1px solid #555; }
-    th, td { padding: 10px; text-align: left; }
-    button { cursor: pointer; }
 
-    #refreshBtn, #filterBtn, #exportAllBtn, #exportFilteredBtn {
-      padding: 6px 10px;
+    table, th, td {
+      border: 1px solid #555;
+    }
+
+    th, td {
+      padding: 10px;
+      text-align: left;
+    }
+
+    #refreshBtn, #filterBtn, #exportAllBtn, #exportFilteredBtn, #createUserBtn {
+      padding: 6px 12px;
       background: #007bff;
       color: white;
       border: none;
-      border-radius: 3px;
-      margin-right: 10px;
+      border-radius: 4px;
       cursor: pointer;
+      margin: 5px 0;
     }
-    .delete-btn { background: #dc3545; color: white; border: none; padding: 4px 8px; border-radius: 4px; }
 
-    .user-delete-btn {
+    .delete-btn {
       background: #dc3545;
       color: white;
-      padding: 5px 8px;
       border: none;
-      border-radius: 3px;
-      margin-left: 10px;
+      padding: 6px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .error {
+      color: red;
+      font-weight: bold;
+    }
+
+    input, select {
+      padding: 6px;
+      margin-right: 5px;
+    }
+
+    #userForm {
+      margin-top: 20px;
+      padding: 10px;
+      border: 1px solid #aaa;
+      width: 380px;
+      border-radius: 6px;
+      background: #f8f8f8;
     }
   </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
 </head>
 
 <body>
 
 <h1>Admin Panel</h1>
+
+<!-- USER CREATION -->
+<h2>Create New User</h2>
+<div id="userForm">
+  <label>Username:</label>
+  <input type="text" id="newUsername" placeholder="Enter username" />
+
+  <label>Password:</label>
+  <input type="password" id="newPassword" placeholder="Enter password" />
+
+  <label>Role:</label>
+  <select id="newRole">
+    <option value="display">Display</option>
+    <option value="brand">Brand</option>
+  </select>
+
+  <button id="createUserBtn">Create User</button>
+  <p id="userMsg"></p>
+</div>
 
 <!-- Upload Section -->
 <h2>Upload Video</h2>
@@ -53,51 +100,19 @@
 <h2>Uploaded Videos</h2>
 <ul id="videoList"></ul>
 
-<!-- Create User -->
-<h2>Create New User</h2>
-
-<label>Username:</label>
-<input id="newUserName">
-
-<br><br>
-
-<label>Password:</label>
-<input id="newUserPassword" type="password">
-
-<br><br>
-
-<label>Role:</label>
-<select id="newUserRole">
-  <option value="display">Display User</option>
-  <option value="brand">Brand User</option>
-</select>
-
-<br><br>
-
-<button id="createUserBtn">Create User</button>
-
-<!-- User List -->
-<h2>Manage Users</h2>
-<ul id="userList"></ul>
-
 <!-- Login History -->
-<h2>User Display Login History</h2>
+<h2>User Login History</h2>
 
-<label>Select Date:</label>
 <input type="date" id="filterDate">
-
 <button id="filterBtn">Filter</button>
-<button id="refreshBtn">Clear Filter</button>
-
-<br><br>
-
+<button id="refreshBtn">Show Today</button>
 <button id="exportAllBtn">Export All</button>
-<button id="exportFilteredBtn">Export Filtered</button>
+<button id="exportFilteredBtn">Export Selected Date</button>
 
 <table>
   <thead>
     <tr>
-      <th>Username</th>
+      <th>User</th>
       <th>Login Time</th>
       <th>Logout Time</th>
       <th>Device</th>
@@ -107,7 +122,6 @@
   <tbody id="historyBody"></tbody>
 </table>
 
-<script src="supabase-client.js"></script>
 <script src="script.js"></script>
 
 </body>

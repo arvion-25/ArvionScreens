@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Brand Panel</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-client.js"></script>
+</head>
+<body>
+  <h2>Brand Panel</h2>
+  <label>Select Display: <select id="displaySelect"></select></label>
+  <button id="loadBtn">Load History</button>
+  <table>
+    <thead><tr><th>User</th><th>Login</th><th>Logout</th><th>Device</th></tr></thead>
+    <tbody id="historyBody"></tbody>
+  </table>
+
+<script>
+async function init() {
+  const { data } = await supabase.from('app_users').select('id,username').eq('role','display').order('username');
+  const sel = document.getElementById('displaySelect');
+  sel.innerHTML = '';
+  (data||[]).forEach(d => sel.appendChild(new Option(d.username, d.id)));
+  // If brand_links exist for current brand, set the select to that display
+  const myUid = sessionStorage.getItem('logged_user_id');
+  if (myUid) {
+    const { data: link } = await supabase.from('brand_links').select('display_user_id').eq('brand_user_id', myUid).single().catch(()=>({data:null}));
+    if (link && link.display_user_id) sel.value = link.display_user_id;
+  }
+}
+
+document.getElementById('loadBtn').onclick = async () => {
+  const displayId = document.getElementById('displaySelect').value;
+  const { data } = await supabase.from('login_history').select('*').eq('display_user_id', displayId).order('login_time',{ascending:false});
+  const tbody = document.getElementById('historyBody'); tbody.innerHTML = '';
+  (data||[]).forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.user_name}</td><td>${new Date(r.login_time).toLocaleString('en-GB',{timeZone:'Asia/Kolkata'})}</td><td>${r.logout_time ? new Date(r.logout_time).toLocaleString('en-GB',{timeZone:'Asia/Kolkata'}) : 'Active'}</td><td>${r.device_model||''}</td>`;
+    tbody.appendChild(tr);
+  });
+};
+
+init();
+</script>
+</body>
+</html>

@@ -1,220 +1,129 @@
-// ---------- IST Format ----------
+// ============ Supabase Helper ============
 function toIST(utcIso) {
-  if (!utcIso) return "";
+  if (!utcIso) return '';
   const d = new Date(utcIso);
-  return d.toLocaleString("en-GB", { timeZone: "Asia/Kolkata" }).replace(",", "");
+  return d.toLocaleString('en-GB', {
+    timeZone: 'Asia/Kolkata'
+  }).replace(',', '');
 }
 
-// ------------------- VIDEO LIST -------------------
-async function listVideos() {
-  const ul = document.getElementById("videoList");
-  ul.innerHTML = "Loading...";
+// ============= CREATE USER ==============
+document.getElementById("createUserBtn").onclick = async () => {
+  const un = document.getElementById("newUsername").value.trim();
+  const pw = document.getElementById("newPassword").value.trim();
+  const rl = document.getElementById("newRole").value;
+  const msg = document.getElementById("userMsg");
 
-  const { data, error } = await supabase.storage.from("ads-videos").list("", { limit: 500 });
-
-  if (error) {
-    ul.innerHTML = "<li>Error loading videos</li>";
+  if (!un || !pw) {
+    msg.textContent = "Username and password required";
+    msg.className = "error";
     return;
   }
 
-  ul.innerHTML = "";
-  data.forEach((file) => {
+  if (un === "admin") {
+    msg.textContent = "Cannot create another admin account";
+    msg.className = "error";
+    return;
+  }
+
+  const { data, error } = await supabase.rpc("create_user", {
+    p_username: un,
+    p_password: pw,
+    p_role: rl
+  });
+
+  if (error) {
+    msg.textContent = "Create failed: " + error.message;
+    msg.className = "error";
+  } else {
+    msg.textContent = "User created successfully!";
+    msg.className = "";
+    document.getElementById("newUsername").value = "";
+    document.getElementById("newPassword").value = "";
+  }
+};
+
+// ============ VIDEO LISTING / UPLOAD / DELETE ============
+async function listVideos() {
+  const ul = document.getElementById('videoList');
+  ul.innerHTML = 'Loading…';
+  const { data, error } = await supabase.storage.from('ads-videos').list('');
+  if (error) { ul.innerHTML = '<li>Error loading videos</li>'; return; }
+
+  ul.innerHTML = '';
+  data.forEach(file => {
     const li = document.createElement("li");
     li.innerHTML = `${file.name} <button class="delete-btn">Delete</button>`;
 
-    li.querySelector(".delete-btn").onclick = async () => {
+    li.querySelector('button').onclick = async () => {
       if (!confirm("Delete this video?")) return;
-
-      const r = await supabase.storage.from("ads-videos").remove([file.name]);
-      if (r.error) {
-        alert("Delete failed");
-      } else {
-        listVideos();
-      }
+      const { error } = await supabase.storage.from('ads-videos').remove([file.name]);
+      if (!error) listVideos();
     };
 
     ul.appendChild(li);
   });
 }
 
-// ---------- UPLOAD ----------
-document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+document.getElementById("uploadForm").onsubmit = async (e) => {
   e.preventDefault();
   const file = e.target.video.files[0];
   if (!file) return alert("Select a file");
 
   const name = Date.now() + "-" + file.name;
+  const { error } = await supabase.storage.from('ads-videos').upload(name, file);
 
-  const { error } = await supabase.storage.from("ads-videos").upload(name, file);
-  if (error) {
-    alert("Upload failed");
-    return;
-  }
-
-  alert("Uploaded");
-  listVideos();
-});
-
-// ------------------- CREATE USER -------------------
-document.getElementById("createUserBtn").onclick = async () => {
-  const un = document.getElementById("newUserName").value;
-  const pwd = document.getElementById("newUserPassword").value;
-  const role = document.getElementById("newUserRole").value;
-
-  if (!un || !pwd) return alert("Enter username and password");
-
-  const { data, error } = await supabase.rpc("create_user", {
-    un,
-    pwd,
-    role_in: role
-  });
-
-  if (error) {
-    alert("Create failed: " + error.message);
-    return;
-  }
-
-  alert("User Created");
-  loadUsers();
+  if (error) alert("Upload failed");
+  else listVideos();
 };
 
-// ------------------- LIST USERS -------------------
-async function loadUsers() {
-  const ul = document.getElementById("userList");
-
-  const { data, error } = await supabase
-    .from("app_users")
-    .select("id, username, role")
-    .order("username");
-
-  if (error) {
-    ul.innerHTML = "<li>Error loading users</li>";
-    return;
-  }
-
-  ul.innerHTML = "";
-  data.forEach((u) => {
-    const li = document.createElement("li");
-    li.innerHTML = `${u.username} (${u.role})`;
-
-    if (u.role !== "admin") {
-      const b = document.createElement("button");
-      b.className = "user-delete-btn";
-      b.innerText = "Delete";
-      b.onclick = () => deleteUser(u.id);
-      li.appendChild(b);
-    }
-
-    ul.appendChild(li);
-  });
-}
-
-// ------------------- DELETE USER -------------------
-async function deleteUser(id) {
-  if (!confirm("Delete this user?")) return;
-
-  const { data, error } = await supabase.rpc("delete_user", { uid: id });
-
-  if (error) {
-    alert("Delete failed: " + error.message);
-    return;
-  }
-
-  alert("User deleted");
-  loadUsers();
-}
-
-// ------------------- LOAD HISTORY -------------------
+// ================ HISTORY LISTING ==================
 async function loadHistory(filterDate = null) {
-  const body = document.getElementById("historyBody");
-  body.innerHTML = "<tr><td colspan='5'>Loading...</td></tr>";
+  const tbody = document.getElementById("historyBody");
 
-  let q = supabase
-    .from("login_history")
+  let q = supabase.from("login_history")
     .select("*")
     .neq("user_name", "admin")
     .order("login_time", { ascending: false });
 
   if (filterDate) {
-    const start = filterDate + "T00:00:00";
-    const end = filterDate + "T23:59:59";
+    const start = new Date(`${filterDate}T00:00:00+05:30`).toISOString();
+    const end = new Date(`${filterDate}T23:59:59+05:30`).toISOString();
     q = q.gte("login_time", start).lte("login_time", end);
   }
 
   const { data, error } = await q;
-
   if (error) {
-    body.innerHTML = "<tr><td colspan='5'>Error loading history</td></tr>";
+    tbody.innerHTML = "<tr><td colspan='5'>Error loading</td></tr>";
     return;
   }
 
-  body.innerHTML = "";
+  tbody.innerHTML = "";
 
-  data.forEach((r) => {
+  data.forEach(row => {
     const tr = document.createElement("tr");
 
-    let logout = r.logout_time ? toIST(r.logout_time) : "Active";
+    let logoutDisplay = row.logout_time
+      ? toIST(row.logout_time)
+      : "Active";
 
     tr.innerHTML = `
-      <td>${r.user_name}</td>
-      <td>${toIST(r.login_time)}</td>
-      <td>${logout}</td>
-      <td>${r.device_model || ""}</td>
-      <td>${r.user_agent || ""}</td>
+      <td>${row.user_name}</td>
+      <td>${toIST(row.login_time)}</td>
+      <td>${logoutDisplay}</td>
+      <td>${row.device_model || ''}</td>
+      <td>${row.user_agent || ''}</td>
     `;
 
-    body.appendChild(tr);
+    tbody.appendChild(tr);
   });
 }
 
-// ------------------- EXPORT -------------------
-function csv(rows) {
-  let out = "Username,Login,Logout,Device,UserAgent\n";
-  rows.forEach((r) => {
-    out += `"${r.user_name}","${toIST(r.login_time)}","${r.logout_time ? toIST(r.logout_time) : ""}","${r.device_model || ""}","${(r.user_agent || "").replace(/"/g, '""')}"\n`;
-  });
-  return out;
-}
-
-document.getElementById("exportAllBtn").onclick = async () => {
-  const { data } = await supabase
-    .from("login_history")
-    .select("*")
-    .neq("user_name", "admin");
-
-  const blob = new Blob([csv(data || [])], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = "history-all.csv";
-  a.click();
-};
-
-document.getElementById("exportFilteredBtn").onclick = async () => {
-  const date = document.getElementById("filterDate").value;
-  if (!date) return alert("Pick a date");
-
-  const start = date + "T00:00:00";
-  const end = date + "T23:59:59";
-
-  const { data } = await supabase
-    .from("login_history")
-    .select("*")
-    .neq("user_name", "admin")
-    .gte("login_time", start)
-    .lte("login_time", end);
-
-  const blob = new Blob([csv(data || [])], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `history-${date}.csv`;
-  a.click();
-};
-
-// ------------------- FILTER BUTTONS -------------------
+// ============ FILTER + REFRESH BUTTONS ============
 document.getElementById("filterBtn").onclick = () => {
-  const d = document.getElementById("filterDate").value;
-  if (!d) return alert("Pick a date");
-  loadHistory(d);
+  const date = document.getElementById("filterDate").value;
+  if (!date) return alert("Pick date");
+  loadHistory(date);
 };
 
 document.getElementById("refreshBtn").onclick = () => {
@@ -222,16 +131,19 @@ document.getElementById("refreshBtn").onclick = () => {
   loadHistory();
 };
 
-// ------------------- BROADCAST SUBSCRIPTION -------------------
-let channel = supabase.channel("login_updates");
+// ================ REALTIME SUBSCRIPTION ================
+let channel = supabase.channel('login_updates');
 
-channel.on("broadcast", { event: "*" }, () => {
-  loadHistory();
-});
+channel
+  .on('broadcast', { event: '*' }, () => {
+    loadHistory();
+  })
+  .subscribe();
 
-channel.subscribe();
-
-// ------------------- INIT -------------------
+// =========== INITIAL RUN ==========
 listVideos();
-loadUsers();
-loadHistory();
+
+// Default show TODAY automatically
+const today = new Date().toISOString().slice(0,10);
+document.getElementById("filterDate").value = today;
+loadHistory(today);

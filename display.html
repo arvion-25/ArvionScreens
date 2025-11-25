@@ -1,7 +1,7 @@
 <!doctype html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <title>Display Player</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>html,body,video{height:100%;margin:0;background:#000}video{width:100%;height:100%;object-fit:contain}</style>
@@ -15,63 +15,76 @@
   <script>
     const BUCKET = 'ads-videos';
     const player = document.getElementById('adPlayer');
-
-    // logged_user_id must be set by your login page (after successful login)
     const userId = sessionStorage.getItem('logged_user_id');
-    const loginRowId = sessionStorage.getItem('login_row_id'); // if you store login_history id
+    const loginRowId = sessionStorage.getItem('login_row_id');
 
     if (!userId) {
-      window.location = '/';
+      // GitHub Pages safe redirect: always point to index.html (relative)
+      window.location = './index.html';
       throw new Error('Not logged in');
     }
 
-    async function loadPlaylist() {
-      // fetch videos assigned to this display user
-      const { data, error } = await supabase.from('videos').select('*').eq('display_user_id', userId).order('uploaded_at',{ascending:true});
+    async function fetchPlaylist() {
+      // fetch videos assigned to this display user (videos.display_user_id)
+      const { data, error } = await supabase.from('videos').select('storage_path').eq('display_user_id', userId).order('uploaded_at', { ascending: true });
       if (error) { console.error(error); return []; }
-      const playlist = [];
-      for (const v of (data || [])) {
-        const { data: pu } = supabase.storage.from(BUCKET).getPublicUrl(v.storage_path);
-        if (pu && pu.publicUrl) playlist.push({ url: pu.publicUrl, meta: v });
+      // get public URLs
+      const urls = [];
+      for (const row of (data||[])) {
+        const { publicURL, error: e } = supabase.storage.from(BUCKET).getPublicUrl(row.storage_path);
+        // supabase v2 returns object: { data: { publicUrl } } in some older libs; handle both:
+        if (publicURL) urls.push(publicURL);
+        else if (publicURL === undefined && publicURL !== null && publicURL !== '') {}
+        else if (row.storage_path) {
+          // try the new interface
+          const pu = supabase.storage.from(BUCKET).getPublicUrl(row.storage_path);
+          if (pu && pu.data && pu.data.publicUrl) urls.push(pu.data.publicUrl);
+        }
       }
-      return playlist;
+      return urls;
     }
 
     let playlist = [], idx = 0;
-
-    async function startPlayer() {
-      playlist = await loadPlaylist();
+    async function start() {
+      playlist = await fetchPlaylist();
       if (!playlist.length) {
         alert('No videos assigned to this display user yet.');
         return;
       }
       idx = 0;
-      player.src = playlist[idx].url;
+      player.src = playlist[idx];
       player.play().catch(()=>{});
     }
 
     player.addEventListener('ended', () => {
       if (!playlist.length) return;
       idx = (idx + 1) % playlist.length;
-      player.src = playlist[idx].url;
+      player.src = playlist[idx];
       player.play().catch(()=>{});
     });
 
-    // heartbeat: update login_history.last_ping if you implemented last_ping
+    // heartbeat update last_ping if you use it
     setInterval(() => {
-      if (loginRowId) {
-        supabase.from('login_history').update({ last_ping: new Date().toISOString() }).eq('id', loginRowId).catch(()=>{});
+      const id = sessionStorage.getItem('login_row_id');
+      if (id) {
+        supabase.from('login_history').update({ last_ping: new Date().toISOString() }).eq('id', id).catch(()=>{});
       }
     }, 30000);
 
+    // on close, update logout_time via best-effort (RPC or simple update)
     window.addEventListener('beforeunload', () => {
-      // fire best-effort logout update
-      if (loginRowId) {
-        try { supabase.from('login_history').update({ logout_time: new Date().toISOString() }).eq('id', loginRowId).catch(()=>{}); } catch(e){}
+      const id = sessionStorage.getItem('login_row_id');
+      if (id) {
+        try {
+          navigator.sendBeacon('/api/auto-logout', JSON.stringify({ loginId: id }));
+        } catch(e) {
+          // fallback: attempt supabase call (may not complete)
+          supabase.from('login_history').update({ logout_time: new Date().toISOString() }).eq('id', id).catch(()=>{});
+        }
       }
     });
 
-    startPlayer();
+    start();
   </script>
 </body>
 </html>

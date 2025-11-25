@@ -185,5 +185,14 @@ document.getElementById('filterBtn').onclick = () => {
 document.getElementById('refreshBtn').onclick = () => { document.getElementById('filterDate').value = ''; loadHistory(); };
 
 // ---------- Initial load ----------
-listVideos();
-loadHistory();
+// ---------- Initial load (DEFAULT = TODAY HISTORY IN IST) ----------
+(function () {
+  const now = new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' });
+  const [d, m, y] = now.split(',')[0].split('/');
+  const todayIST = `${y}-${m}-${d}`;
+
+  document.getElementById('filterDate').value = todayIST;
+  listVideos();
+  loadHistory(todayIST);
+})();
+
